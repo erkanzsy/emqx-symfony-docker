@@ -1,0 +1,74 @@
+version: '3'
+
+services:
+  nginx:
+    container_name: emqx-nginx
+    build: docker/nginx
+    working_dir: /var/www/app
+    ports:
+      - "9969:80"
+    volumes:
+      - ./:/var/www/app
+      - ./docker/nginx/default-compose.conf:/etc/nginx/conf.d/default-compose.conf
+    networks:
+      - emqx-bridge
+
+  php:
+    container_name: emqx-fpm
+    build: docker/php
+    working_dir: /var/www/app
+    volumes:
+      - ./:/var/www/app
+    networks:
+      - emqx-bridge
+
+  mysql:
+    container_name: emqx-mysql
+    build: docker/mysql
+    restart: on-failure
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+    volumes:
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - emqx-bridge
+
+  phpmyadmin:
+    container_name: emqx-phpmyadmin
+    build: docker/phpmyadmin
+    restart: on-failure
+    ports:
+      - "7999:80"
+    environment:
+      - PMA_HOST=mysql
+      - MYSQL_ROOT_PASSWORD=root
+    volumes:
+      - ./docker/phpmyadmin/upload.ini:/usr/local/etc/php/php.ini
+    networks:
+      - emqx-bridge
+
+  emqx1:
+    container_name: emqx-cluster
+    image: emqx/emqx:v4.0.0
+    environment:
+      - "EMQX_NAME=emqx"
+      - "EMQX_HOST=node1.emqx.io"
+      - "EMQX_CLUSTER__DISCOVERY=static"
+      - "EMQX_CLUSTER__STATIC__SEEDS=emqx@node1.emqx.io, emqx@node2.emqx.io"
+      - "EMQX_ZONE__EXTERNAL__RETRY_INTERVAL=2s"
+      - "EMQX_MQTT__MAX_TOPIC_ALIAS=10"
+    volumes:
+      - ./tmp/emqx.lic:/opt/emqx/etc/emqx.lic
+    healthcheck:
+      test: [ "CMD", "/opt/emqx/bin/emqx_ctl", "status" ]
+      interval: 5s
+      timeout: 25s
+      retries: 5
+    networks:
+      emqx-bridge:
+        aliases:
+          - node1.emqx.io
+
+networks:
+  emqx-bridge:
+    driver: bridge
